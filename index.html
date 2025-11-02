@@ -3,17 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>MOVA – Color Bends (No-Lib)</title>
+<title>MOVA – Color Bends (CSS only)</title>
 <style>
   html, body { height:100%; margin:0; background:#0b0b0b; }
-  /* Vollflächiger Hintergrund-Container */
-  .bends {
-    position: fixed; inset: 0; overflow: hidden;
-    background: radial-gradient(120% 100% at 50% 50%, #0b0b0b 0 60%, #000 100%);
-    isolation: isolate;
-  }
-
-  /* Ebene 1 – „weiche“ Farbwolken (screen) */
+  .bends { position:fixed; inset:0; overflow:hidden; background:#0b0b0b; isolation:isolate; }
   .bends::before {
     content:""; position:absolute; inset:-20%;
     background:
@@ -21,42 +14,29 @@
       radial-gradient(70% 55% at 85% 20%, #0ea5e9 0 45%, transparent 46%),
       radial-gradient(70% 55% at 20% 85%, #00e5a8 0 45%, transparent 46%),
       radial-gradient(70% 55% at 80% 80%, #ffd166 0 40%, transparent 41%),
-      radial-gradient(60% 45% at 50% 50%, #ffffff 0 20%, transparent 21%);
+      radial-gradient(60% 45% at 50% 50%, #ffffff 0 18%, transparent 19%);
     filter: blur(60px) saturate(1.35) contrast(1.05);
     mix-blend-mode: screen;
-    animation: moveA 22s linear infinite alternate;
-    transform: translateZ(0);
+    animation: a 22s linear infinite alternate;
   }
-
-  /* Ebene 2 – „Bänder“/Glanzkanten (overlay) */
   .bends::after {
     content:""; position:absolute; inset:-25%;
     background:
-      conic-gradient(from 20deg at 30% 40%, rgba(255,255,255,.28), rgba(0,0,0,0) 35%),
-      conic-gradient(from -40deg at 70% 65%, rgba(255,255,255,.22), rgba(0,0,0,0) 40%),
-      radial-gradient(55% 75% at 60% 30%, rgba(255,255,255,.12), rgba(0,0,0,0) 60%),
-      radial-gradient(55% 75% at 40% 75%, rgba(255,255,255,.10), rgba(0,0,0,0) 60%);
+      conic-gradient(from 20deg at 30% 40%, rgba(255,255,255,.28), transparent 35%),
+      conic-gradient(from -40deg at 70% 65%, rgba(255,255,255,.22), transparent 40%),
+      radial-gradient(55% 75% at 60% 30%, rgba(255,255,255,.12), transparent 60%),
+      radial-gradient(55% 75% at 40% 75%, rgba(255,255,255,.10), transparent 60%);
     filter: blur(18px) saturate(1.2);
     mix-blend-mode: overlay;
-    animation: moveB 26s ease-in-out infinite alternate;
-    transform: translateZ(0);
+    animation: b 26s ease-in-out infinite alternate;
   }
-
-  @keyframes moveA {
-    0%   { transform: translate(-3%, -2%) rotate(0deg)    scale(1.05); }
-    50%  { transform: translate( 4%,  3%) rotate(9deg)    scale(1.08); }
-    100% { transform: translate(-2%,  5%) rotate(-6deg)   scale(1.03); }
-  }
-  @keyframes moveB {
-    0%   { transform: translate(3%, 2%) rotate(-8deg) scale(1.1); }
-    50%  { transform: translate(-4%, -3%) rotate(6deg) scale(1.06); }
-    100% { transform: translate(2%, -5%) rotate(12deg) scale(1.08); }
-  }
-
-  /* optional: weniger Bewegung respektieren */
-  @media (prefers-reduced-motion: reduce) {
-    .bends::before, .bends::after { animation: none; }
-  }
+  @keyframes a { 0%{transform:translate(-3%,-2%) rotate(0) scale(1.05)}
+                 50%{transform:translate(4%,3%) rotate(9deg) scale(1.08)}
+                 100%{transform:translate(-2%,5%) rotate(-6deg) scale(1.03)} }
+  @keyframes b { 0%{transform:translate(3%,2%) rotate(-8deg) scale(1.1)}
+                 50%{transform:translate(-4%,-3%) rotate(6deg) scale(1.06)}
+                 100%{transform:translate(2%,-5%) rotate(12deg) scale(1.08)} }
+  @media (prefers-reduced-motion: reduce){ .bends::before,.bends::after{animation:none} }
 </style>
 </head>
 <body>
