@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MOVA Media – Color Bends</title>
+  <style>
+    html,body{height:100%;margin:0;background:transparent;}
+    #mova-bends-root{position:fixed;inset:0;overflow:hidden;background:transparent;}
+  </style>
+</head>
+<body>
+  <div id="mova-bends-root"></div>
+
+  <script src="https://unpkg.com/three@0.161.0/build/three.min.js"></script>
+  <script>
+  (function(){
+    const el=document.getElementById('mova-bends-root');
+    if(!el||!window.THREE)return;
+
+    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+    renderer.setSize(innerWidth,innerHeight);
+    el.appendChild(renderer.domElement);
+    const scene=new THREE.Scene();
+    const camera=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+
+    const MAX=3;
+    const frag=`precision highp float;
+    uniform vec2 uResolution; uniform float uTime;
+    void main(){
+      vec2 uv=(gl_FragCoord.xy-uResolution*0.5)/uResolution.y;
+      float r=length(uv);
+      float a=sin(uTime*0.3+r*4.0)*0.5+0.5;
+      gl_FragColor=vec4(mix(vec3(0.06,0.65,0.9),vec3(0.49,0.23,0.93),a),1.0);
+    }`;
+    const vert=`precision highp float; attribute vec3 position;
+    void main(){gl_Position=vec4(position,1.0);} `;
+    const geom=new THREE.BufferGeometry();
+    geom.setAttribute('position',
+      new THREE.BufferAttribute(new Float32Array([-1,-1,0,3,-1,0,-1,3,0]),3));
+    const uniforms={
+      uResolution:{value:new THREE.Vector2(innerWidth,innerHeight)},
+      uTime:{value:0}
+    };
+    const mat=new THREE.ShaderMaterial({vertexShader:vert,fragmentShader:frag,uniforms});
+    const mesh=new THREE.Mesh(geom,mat); scene.add(mesh);
+
+    addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight);
+      uniforms.uResolution.value.set(innerWidth,innerHeight);});
+    const start=performance.now();
+    function tick(now){uniforms.uTime.value=(now-start)*0.001;
+      renderer.render(scene,camera); requestAnimationFrame(tick);}
+    requestAnimationFrame(tick);
+  })();
+  </script>
+</body>
+</html>
