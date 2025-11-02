@@ -1,172 +1,166 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MOVA – Dual Arcs (Three)</title>
-  <style>
-    html,body{height:100%;margin:0;background:#000;overflow:hidden}
-    canvas{position:fixed;inset:0;display:block;width:100%;height:100%}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MOVA – Dual Arcs (fix)</title>
+<style>
+  html,body{height:100%;margin:0;background:#000;overflow:hidden}
+  canvas{position:fixed;inset:0;display:block;width:100%;height:100%}
+</style>
 </head>
 <body>
-  <!-- WICHTIG: three.min.js liegt im Repo-Root -->
-  <script src="three.min.js"></script>
-  <script>
-  (() => {
-    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false, powerPreference:'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
-    renderer.setSize(innerWidth, innerHeight);
-    document.body.appendChild(renderer.domElement);
+<script src="three.min.js"></script>
+<script>
+(()=>{
+// --- Renderer / Scene / Cam ---
+const renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
+renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x000000, 1);
+document.body.appendChild(renderer.domElement);
 
-    const scene  = new THREE.Scene();
-    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const scene  = new THREE.Scene();
+const camera = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
 
-    // Fullscreen-Quad
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
-      -1,-1,0,  3,-1,0,  -1,3,0
-    ]), 3));
+// --- Fullscreen-Triangle ---
+const geom = new THREE.BufferGeometry();
+geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+  -1,-1,0,  3,-1,0,  -1,3,0
+]),3));
 
-    const vert = `
-      precision highp float;
-      attribute vec3 position;
-      void main(){ gl_Position = vec4(position,1.0); }
-    `;
+// --- Shader ---
+const vert = `precision highp float;
+attribute vec3 position;
+void main(){ gl_Position=vec4(position,1.0); }`;
 
-    const frag = `
-      precision highp float;
-      uniform vec2  uRes;
-      uniform float uTime;
-      uniform vec2  uMouse;
+const frag = `precision highp float;
+uniform vec2  uRes; uniform float uTime; uniform vec2 uMouse;
+uniform vec2  uC1;  uniform float uR1;  uniform vec2 uC2;  uniform float uR2;
+uniform vec2  uArc1;uniform vec2 uArc2;
+uniform float uThick,uGlow,uWarpAmp,uWarpFreq,uMouseInfl,uMouseStr,uHueShift;
+const float PI=3.141592653589793;
 
-      uniform vec2  uC1; uniform float uR1;
-      uniform vec2  uC2; uniform float uR2;
-      uniform vec2  uArc1; uniform vec2 uArc2;
+float normA(float a){ a=mod(a,2.0*PI); return a<0.0?a+2.0*PI:a; }
+bool inArc(float ang,float a0,float a1){
+  a0=normA(a0); a1=normA(a1); ang=normA(ang);
+  return (a0<=a1)? (ang>=a0 && ang<=a1) : (ang>=a0 || ang<=a1);
+}
+vec3 hue(float h){
+  float r=abs(h*6.0-3.0)-1.0;
+  float g=2.0-abs(h*6.0-2.0);
+  float b=2.0-abs(h*6.0-4.0);
+  return clamp(vec3(r,g,b),0.0,1.0);
+}
+float ringDist(vec2 p, vec2 c, float r){ return abs(length(p-c)-r); }
 
-      uniform float uThick, uGlow, uWarpAmp, uWarpFreq, uMouseInfl, uMouseStr, uHueShift;
+void main(){
+  vec2 aspect = vec2(uRes.x/uRes.y,1.0);
+  vec2 uv = (gl_FragCoord.xy/uRes-0.5)*2.0; uv.x*=aspect.x;
+  vec2 m  = uMouse; m.x*=aspect.x;
 
-      float PI = 3.141592653589793;
+  float t=uTime;
+  float warp1 = uWarpAmp * sin(uWarpFreq*(uv.x+uv.y) + t*0.7);
+  float warp2 = uWarpAmp * cos(uWarpFreq*(uv.x-uv.y) + t*0.6);
 
-      float normAngle(float a){ a = mod(a, 2.0*PI); return a < 0.0 ? a + 2.0*PI : a; }
-      bool inArc(float ang, float a0, float a1){
-        if(a0 <= a1) return ang >= a0 && ang <= a1;
-        return (ang >= a0) || (ang <= a1);
-      }
-      vec3 hue(float h){
-        float r = abs(h*6.0 - 3.0) - 1.0;
-        float g = 2.0 - abs(h*6.0 - 2.0);
-        float b = 2.0 - abs(h*6.0 - 4.0);
-        return clamp(vec3(r,g,b), 0.0, 1.0);
-      }
-      float ringDist(vec2 uv, vec2 c, float r){ return abs(length(uv - c) - r); }
+  float dm1=length((uv-uC1)-(m-uC1));
+  float dm2=length((uv-uC2)-(m-uC2));
+  float mouseField1=exp(-pow(dm1/uMouseInfl,2.0));
+  float mouseField2=exp(-pow(dm2/uMouseInfl,2.0));
+  float mPush1=uMouseStr*mouseField1;
+  float mPush2=uMouseStr*mouseField2;
 
-      void main(){
-        vec2 aspect = vec2(uRes.x/uRes.y, 1.0);
-        vec2 uv = (gl_FragCoord.xy / uRes - 0.5) * 2.0;
-        uv.x *= aspect.x;
+  float ang1=normA(atan(uv.y-uC1.y, uv.x-uC1.x));
+  float ang2=normA(atan(uv.y-uC2.y, uv.x-uC2.x));
+  bool vis1=inArc(ang1,uArc1.x,uArc1.y);
+  bool vis2=inArc(ang2,uArc2.x,uArc2.y);
 
-        vec2 m = uMouse; m.x *= aspect.x;
+  float r1=uR1+warp1+mPush1*(0.6+0.4*sin(ang1*3.0));
+  float r2=uR2+warp2+mPush2*(0.6+0.4*cos(ang2*3.0));
 
-        float t = uTime;
+  float d1=ringDist(uv,uC1,r1), d2=ringDist(uv,uC2,r2);
 
-        float warp1 = uWarpAmp * sin(uWarpFreq * (uv.x + uv.y) + t*0.7);
-        float warp2 = uWarpAmp * cos(uWarpFreq * (uv.x - uv.y) + t*0.6);
+  float core1=1.0-smoothstep(uThick, uThick*1.4, d1);
+  float core2=1.0-smoothstep(uThick, uThick*1.4, d2);
+  float glow1=1.0-smoothstep(uThick*1.4, uThick*uGlow, d1);
+  float glow2=1.0-smoothstep(uThick*1.4, uThick*uGlow, d2);
 
-        float dm1 = length((uv - uC1) - (m - uC1));
-        float dm2 = length((uv - uC2) - (m - uC2));
-        float mouseField1 = exp(-pow(dm1/uMouseInfl, 2.0));
-        float mouseField2 = exp(-pow(dm2/uMouseInfl, 2.0));
-        float mPush1 = uMouseStr * mouseField1;
-        float mPush2 = uMouseStr * mouseField2;
+  float H1=fract((ang1/(2.0*PI))+uHueShift);
+  float H2=fract((ang2/(2.0*PI))+uHueShift+0.35);
+  vec3 col1=hue(H1), col2=hue(H2);
 
-        float ang1 = normAngle(atan(uv.y - uC1.y, uv.x - uC1.x));
-        float ang2 = normAngle(atan(uv.y - uC2.y, uv.x - uC2.x));
-        bool vis1 = inArc(ang1, normAngle(uArc1.x), normAngle(uArc1.y));
-        bool vis2 = inArc(ang2, normAngle(uArc2.x), normAngle(uArc2.y));
+  vec3 col=vec3(0.0);
+  // Falls die Winkelbereiche wider Erwarten nichts schneiden, zeigen wir dennoch etwas Glow,
+  // damit nie komplett schwarz bleibt:
+  float safe = 0.12;
+  if (vis1) col += col1*(core1*0.95 + glow1*0.35); else col += col1*max(glow1*0.10, safe*exp(-d1*40.0));
+  if (vis2) col += col2*(core2*0.95 + glow2*0.35); else col += col2*max(glow2*0.10, safe*exp(-d2*40.0));
 
-        float r1 = uR1 + warp1 + mPush1 * (0.6 + 0.4*sin(ang1*3.0));
-        float r2 = uR2 + warp2 + mPush2 * (0.6 + 0.4*cos(ang2*3.0));
+  col = pow(col, vec3(0.9));
+  gl_FragColor = vec4(col,1.0);
+}`;
 
-        float d1 = ringDist(uv, uC1, r1);
-        float d2 = ringDist(uv, uC2, r2);
+const uniforms = {
+  uRes:       { value: new THREE.Vector2(innerWidth, innerHeight) },
+  uTime:      { value: 0 },
+  uMouse:     { value: new THREE.Vector2(-2,-2) },
 
-        float core1 = 1.0 - smoothstep(uThick, uThick*1.4, d1);
-        float core2 = 1.0 - smoothstep(uThick, uThick*1.4, d2);
-        float glow1 = 1.0 - smoothstep(uThick*1.4, uThick*uGlow, d1);
-        float glow2 = 1.0 - smoothstep(uThick*1.4, uThick*uGlow, d2);
+  uC1:        { value: new THREE.Vector2() },
+  uR1:        { value: 1.1 },
+  uC2:        { value: new THREE.Vector2() },
+  uR2:        { value: 1.05 },
 
-        float H1 = fract((ang1 / (2.0*PI)) + uHueShift);
-        float H2 = fract((ang2 / (2.0*PI)) + uHueShift + 0.35);
-        vec3 col1 = hue(H1);
-        vec3 col2 = hue(H2);
+  uArc1:      { value: new THREE.Vector2() },
+  uArc2:      { value: new THREE.Vector2() },
 
-        vec3 col = vec3(0.0);
-        if (vis1) col += col1 * (core1*0.95 + glow1*0.35);
-        if (vis2) col += col2 * (core2*0.95 + glow2*0.35);
-        col = pow(col, vec3(0.9));
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `;
+  uThick:     { value: 0.006 },
+  uGlow:      { value: 34.0 },
+  uWarpAmp:   { value: 0.012 },
+  uWarpFreq:  { value: 3.2 },
+  uMouseInfl: { value: 0.38 },
+  uMouseStr:  { value: 0.045 },
+  uHueShift:  { value: 0.0 }
+};
 
-    const uniforms = {
-      uRes:       { value: new THREE.Vector2(innerWidth, innerHeight) },
-      uTime:      { value: 0 },
-      uMouse:     { value: new THREE.Vector2(-2, -2) },
-      uC1:        { value: new THREE.Vector2() },
-      uR1:        { value: 1.0 },
-      uC2:        { value: new THREE.Vector2() },
-      uR2:        { value: 1.0 },
-      uArc1:      { value: new THREE.Vector2() },
-      uArc2:      { value: new THREE.Vector2() },
-      uThick:     { value: 0.006 },
-      uGlow:      { value: 30.0 },
-      uWarpAmp:   { value: 0.015 },
-      uWarpFreq:  { value: 3.0 },
-      uMouseInfl: { value: 0.35 },
-      uMouseStr:  { value: 0.04 },
-      uHueShift:  { value: 0.0 }
-    };
+const mat = new THREE.ShaderMaterial({vertexShader:vert, fragmentShader:frag, uniforms});
+scene.add(new THREE.Mesh(geom, mat));
 
-    const mat = new THREE.ShaderMaterial({ vertexShader:vert, fragmentShader:frag, uniforms });
-    scene.add(new THREE.Mesh(geom, mat));
+// --- Platzierung robust fürs Seitenverhältnis ---
+function placeArcs(){
+  const w=innerWidth, h=innerHeight, a=w/h;
+  uniforms.uRes.value.set(w,h);
+  renderer.setSize(w,h,false);
 
-    function resize(){
-      const w = innerWidth, h = innerHeight;
-      renderer.setSize(w, h, false);
-      uniforms.uRes.value.set(w,h);
-      const aspect = w / h;
+  // Bogen 1: unten links außerhalb, schneidet garantiert ins Bild
+  uniforms.uC1.value.set(-0.85*a, 0.95);
+  uniforms.uR1.value = 1.25;
+  uniforms.uArc1.value.set(-2.9, -0.1); // ~untere linke Hälfte
 
-      // Bogen 1 – links/unten, halber Kreis
-      uniforms.uC1.value.set(-0.68 * aspect, 0.85);
-      uniforms.uR1.value = 1.15;
-      uniforms.uArc1.value.set(-3.0, -0.2);
+  // Bogen 2: oben rechts außerhalb
+  uniforms.uC2.value.set( 0.95*a, -0.85);
+  uniforms.uR2.value = 1.18;
+  uniforms.uArc2.value.set( 0.5, 2.7 );  // ~obere rechte Hälfte
+}
+addEventListener('resize', placeArcs, {passive:true});
+placeArcs();
 
-      // Bogen 2 – rechts/oben
-      uniforms.uC2.value.set( 0.85 * aspect, -0.75);
-      uniforms.uR2.value = 1.05;
-      uniforms.uArc2.value.set( 0.6, 2.8 );
-    }
-    addEventListener('resize', resize, {passive:true});
-    resize();
+// Maus
+addEventListener('pointermove', e=>{
+  const x=(e.clientX/innerWidth)*2-1;
+  const y=-(e.clientY/innerHeight)*2+1;
+  uniforms.uMouse.value.lerp(new THREE.Vector2(x,y),0.35);
+},{passive:true});
+addEventListener('pointerleave',()=>uniforms.uMouse.value.set(-2,-2),{passive:true});
 
-    function onMove(e){
-      const x =  (e.clientX / innerWidth ) * 2 - 1;
-      const y = -(e.clientY / innerHeight) * 2 + 1;
-      uniforms.uMouse.value.lerp(new THREE.Vector2(x,y), 0.4);
-    }
-    addEventListener('pointermove', onMove, {passive:true});
-    addEventListener('pointerleave', ()=>uniforms.uMouse.value.set(-2,-2), {passive:true});
-
-    const t0 = performance.now();
-    function loop(t){
-      uniforms.uTime.value = (t - t0) * 0.001;
-      uniforms.uHueShift.value = (uniforms.uTime.value * 0.03) % 1.0; // sehr langsam
-      renderer.render(scene, camera);
-      requestAnimationFrame(loop);
-    }
-    requestAnimationFrame(loop);
-  })();
-  </script>
+// Loop
+const t0=performance.now();
+(function loop(t){
+  uniforms.uTime.value=(t-t0)*0.001;
+  uniforms.uHueShift.value=(uniforms.uTime.value*0.03)%1.0; // sehr langsam
+  renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+})(t0);
+})();
+</script>
 </body>
 </html>
