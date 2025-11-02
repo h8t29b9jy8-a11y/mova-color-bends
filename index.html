@@ -180,7 +180,200 @@
     PARAMS.colors.slice(0, MAX_COLORS).forEach((hex, i) => {
       uniforms.uColors.value[i] = new THREE.Color(hex);
     });
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MOVA – Dual Arc Strings</title>
+  <style>
+    html,body{height:100%;margin:0;background:#000;overflow:hidden}
+    canvas{position:fixed;inset:0;display:block;width:100%;height:100%}
+  </style>
+</head>
+<body>
+<canvas id="fx"></canvas>
+<script>
+(() => {
+  const c = document.getElementById('fx');
+  const ctx = c.getContext('2d');
+  let W=0,H=0, DPR= Math.min(devicePixelRatio||1, 2);
+  const resize = () => {
+    W = c.clientWidth; H = c.clientHeight;
+    c.width = Math.round(W*DPR); c.height = Math.round(H*DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  };
+  addEventListener('resize', resize, {passive:true}); resize();
 
+  // ====== CONFIG ======
+  const CFG = {
+    points: 240,             // Auflösung der Bögen
+    thickness: 6,            // Strichstärke (px)
+    glow: 22,                // Glow/Weichzeichnung
+    idleWobbleAmp: 0.8,      // sanfte Grundbewegung
+    idleWobbleFreq: 0.8,
+    mouseRadius: 160,        // Reichweite der Maus-Einwirkung (px)
+    mouseForce: 18,          // Stärke (je Segment)
+    spring: 0.12,            // Feder
+    damping: 0.88,           // Dämpfung
+    hueSpeed: 10,            // Grad pro Sekunde Farbverschiebung
+    segmentAlpha: 0.9        // Deckkraft pro Segment
+  };
+
+  // ====== Maus ======
+  const mouse = {x:-9999,y:-9999, vx:0, vy:0, t:0};
+  addEventListener('pointermove', (e)=>{
+    const x = e.clientX, y = e.clientY;
+    mouse.vx = x - mouse.x; mouse.vy = y - mouse.y;
+    mouse.x = x; mouse.y = y; mouse.t = performance.now();
+  }, {passive:true});
+  addEventListener('pointerleave', ()=>{ mouse.x = -9999; mouse.y = -9999; }, {passive:true});
+
+  // ====== Arc-Objekt ======
+  class Arc {
+    constructor({cx, cy, r, start, end, dir=1, hueOffset=0}) {
+      this.cx=cx; this.cy=cy; this.r=r;
+      this.start=start; this.end=end; this.dir=dir;
+      this.hueOffset = hueOffset;
+      const n = CFG.points;
+      this.angles = new Float32Array(n);
+      this.base = new Float32Array(n);      // Basisradius
+      this.off = new Float32Array(n);       // aktuelle Abweichung
+      this.vel = new Float32Array(n);       // Geschwindigkeiten
+      for(let i=0;i<n;i++){
+        const t = i/(n-1);
+        this.angles[i] = this.start + (this.end-this.start)*t;
+        this.base[i] = this.r;
+        this.off[i] = 0;
+        this.vel[i] = 0;
+      }
+      // leichte Rotation/Drift
+      this.rot = 0;
+      this.rotSpeed = (Math.random()*0.5+0.5) * 0.1 * this.dir; // rad/s
+    }
+    step(dt, time){
+      // Idle-Wobble + Federdynamik + Mauskräfte
+      const n = this.angles.length;
+      for(let i=0;i<n;i++){
+        // Idle Perlin-Fake: zwei Sinusse
+        const wobble = CFG.idleWobbleAmp * Math.sin( (i*0.12) + time*CFG.idleWobbleFreq ) * 0.35
+                     + CFG.idleWobbleAmp * Math.cos( (i*0.07) + time*0.6 ) * 0.25;
+
+        // Weltkoordinate des Punktes (geschätzt mit aktueller Offsets)
+        const ang = this.angles[i] + this.rot;
+        const rad = this.base[i] + this.off[i] + wobble;
+        const px = this.cx + Math.cos(ang)*rad;
+        const py = this.cy + Math.sin(ang)*rad;
+
+        // Maus-Einfluss (Glocke)
+        let force = 0;
+        if (mouse.x > -1) {
+          const dx = px - mouse.x, dy = py - mouse.y;
+          const d = Math.hypot(dx,dy);
+          if (d < CFG.mouseRadius){
+            const f = 1 - (d/CFG.mouseRadius);
+            // Gummiartig entlang der Normalen nach außen (oder innen je nach Vorzeichen)
+            const dir = (dx*Math.cos(ang) + dy*Math.sin(ang))>0 ? 1 : -1;
+            force = dir * CFG.mouseForce * f*f;
+          }
+        }
+
+        // Feder zum Basisradius + Maus-Force
+        const target = this.base[i] + wobble + force;
+        const acc = (target - (this.base[i] + this.off[i]))*CFG.spring;
+        this.vel[i] = (this.vel[i] + acc) * CFG.damping;
+        this.off[i] += this.vel[i];
+      }
+      this.rot += this.rotSpeed * dt;
+    }
+    draw(time, hueShift){
+      const n = this.angles.length;
+      ctx.lineWidth = CFG.thickness;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.shadowBlur = CFG.glow;
+      ctx.shadowColor = 'rgba(255,255,255,0.35)';
+
+      // Segmentweise malen, damit wir Farbverlauf entlang der Schnur bekommen
+      for(let i=0;i<n-1;i++){
+        const a0 = this.angles[i]   + this.rot;
+        const a1 = this.angles[i+1] + this.rot;
+        const r0 = this.base[i]   + this.off[i];
+        const r1 = this.base[i+1] + this.off[i+1];
+
+        const x0 = this.cx + Math.cos(a0)*r0;
+        const y0 = this.cy + Math.sin(a0)*r0;
+        const x1 = this.cx + Math.cos(a1)*r1;
+        const y1 = this.cy + Math.sin(a1)*r1;
+
+        // Hue je Segment: sanft verschoben, ergibt fließenden Farbwechsel
+        const h = (this.hueOffset + hueShift + i*0.6) % 360;
+        ctx.strokeStyle = `hsla(${h}, 85%, 60%, ${CFG.segmentAlpha})`;
+
+        ctx.beginPath();
+        ctx.moveTo(x0,y0);
+        // als leichte Kurve:
+        const mx = (x0+x1)/2, my=(y0+y1)/2;
+        ctx.quadraticCurveTo(mx,my,x1,y1);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // ====== Szene aufbauen: zwei große Kreisbögen, die halb im Bild liegen ======
+  const arcs = [];
+
+  function rebuildArcs(){
+    arcs.length = 0;
+    const minDim = Math.min(W,H);
+    // Bogen 1: links unten, groß – halber Kreis sichtbar
+    arcs.push(new Arc({
+      cx: W*0.15, cy: H*1.05,
+      r: minDim*0.95,
+      start: -Math.PI*0.95, end: -Math.PI*0.15,
+      dir: 1, hueOffset: 190
+    }));
+    // Bogen 2: rechts oben, gegensinnig – nur Teil sichtbar
+    arcs.push(new Arc({
+      cx: W*0.92, cy: -H*0.05,
+      r: minDim*0.85,
+      start: Math.PI*0.15, end: Math.PI*0.95,
+      dir: -1, hueOffset: 320
+    }));
+  }
+  rebuildArcs();
+  addEventListener('resize', rebuildArcs, {passive:true});
+
+  // ====== Loop ======
+  let last = performance.now();
+  function frame(now){
+    const dt = Math.min(0.05, (now-last)/1000); last = now;
+    const t  = now/1000;
+
+    // Hintergrund
+    ctx.clearRect(0,0,W,H);
+    // leichter Filmgrain für Tiefe (optional, sehr subtil)
+    // ctx.globalAlpha = 0.04; for (let i=0;i<2;i++){ ctx.fillStyle = `rgb(0,0,0)`; ctx.fillRect(0,0,W,H); } ctx.globalAlpha = 1;
+
+    // Hue drift
+    const hueShift = (t * CFG.hueSpeed) % 360;
+
+    // Update & Draw
+    for(const a of arcs){ a.step(dt, t); a.draw(t, hueShift); }
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // reduzierte Bewegung respektieren
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches){
+    CFG.idleWobbleAmp = 0.2;
+    CFG.mouseForce = 8;
+  }
+})();
+</script>
+</body>
+</html>
     const material = new THREE.ShaderMaterial({
       vertexShader:   vert,
       fragmentShader: frag,
